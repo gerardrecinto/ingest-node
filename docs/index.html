@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingest Node Lab | Take the data, let nothing in</title>
+<meta name="description" content="Ansible builds a RAID 10, LVM, XFS, ZFS and NFS ingest node. A push-only firewall is proven with real packets, and an fio gate fails when I/O gets slower. Runs on a real Linux kernel in CI.">
+<link rel="canonical" href="https://gerardrecinto.github.io/ingest-node-lab/">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#07090E" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F5F8" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Take the data. Let nothing in.">
+<meta property="og:description" content="A Linux ingest node lab: RAID, LVM, XFS, ZFS, NFS, a push-only nftables policy proven with real packets, and an fio regression gate.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%238b5cf6%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>if(!matchMedia('(prefers-reduced-motion: reduce)').matches)document.documentElement.classList.add('js')</script>
+<style>
+
+:root{--bg:#07090E;--fg:#E8EBF2;--mut:#98A0B3;--line:#1B2130;--card:#0E121B;--card2:#121826;--a:#10b981;--b:#06b6d4;--c:#8b5cf6;--bad:#f87171;--ok:#34d399;--grid:rgba(255,255,255,.035);--al1:rgba(16,185,129,.20);--al2:rgba(6,182,212,.17);--al3:rgba(139,92,246,.18);--ease:cubic-bezier(.16,1,.3,1)}
+@media(prefers-color-scheme:light){:root{--bg:#F4F5F8;--fg:#0F1420;--mut:#566074;--line:#DDE1EA;--card:#fff;--card2:#F9FAFC;--bad:#b91c1c;--ok:#047857;--grid:rgba(0,0,0,.05);--al1:rgba(16,185,129,.16);--al2:rgba(6,182,212,.14);--al3:rgba(139,92,246,.12)}}
+*{box-sizing:border-box}html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 Inter,-apple-system,system-ui,sans-serif;overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px),linear-gradient(to bottom,var(--grid) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse at 50% 20%,#000,transparent 75%);mask-image:radial-gradient(ellipse at 50% 20%,#000,transparent 75%)}
+.aurora{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.aurora i{position:absolute;width:60vmax;height:60vmax;border-radius:50%;filter:blur(40px)}
+.aurora i:nth-child(1){top:-22vmax;left:-14vmax;background:radial-gradient(circle,var(--al1),transparent 65%);animation:da 26s ease-in-out infinite alternate}
+.aurora i:nth-child(2){top:18vh;right:-22vmax;background:radial-gradient(circle,var(--al2),transparent 65%);animation:db 32s ease-in-out infinite alternate}
+.aurora i:nth-child(3){bottom:-26vmax;left:22vw;background:radial-gradient(circle,var(--al3),transparent 65%);animation:dc 38s ease-in-out infinite alternate}
+@keyframes da{to{transform:translate3d(14vmax,10vmax,0) scale(1.15)}}@keyframes db{to{transform:translate3d(-12vmax,14vmax,0) scale(.9)}}@keyframes dc{to{transform:translate3d(10vmax,-12vmax,0) scale(1.1)}}
+.prog{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--a),var(--b),var(--c));pointer-events:none}
+header.nav{position:sticky;top:0;z-index:50;-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);background:color-mix(in srgb,var(--bg) 70%,transparent);border-bottom:1px solid var(--line)}
+.nav div{max-width:1100px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:20px}
+.brand{font:600 14px 'JetBrains Mono',monospace;color:var(--fg);text-decoration:none;display:flex;gap:8px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--a);box-shadow:0 0 0 0 var(--a);animation:ping 2.4s infinite}
+@keyframes ping{70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.nav nav{margin-left:auto;display:flex;gap:18px;font-size:14px}.nav nav a{color:var(--mut);text-decoration:none;transition:color .2s}.nav nav a:hover{color:var(--fg)}
+main{position:relative;z-index:1}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+section{padding:88px 0 0}
+.eyebrow{font:500 12px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--a);margin:0 0 14px}
+h1{font-size:clamp(38px,7.2vw,76px);line-height:1.02;letter-spacing:-.035em;font-weight:800;margin:0 0 20px}
+h2{font-size:clamp(26px,4vw,40px);line-height:1.1;letter-spacing:-.03em;font-weight:700;margin:0 0 14px}
+.grad{background:linear-gradient(100deg,var(--a),var(--b) 50%,var(--c));-webkit-background-clip:text;background-clip:text;color:transparent;background-size:200% 100%;animation:sh 8s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.lead{font-size:clamp(17px,2vw,20px);color:var(--mut);max-width:680px;margin:0}
+p{margin:8px 0}a{color:var(--b)}code{font:13px 'JetBrains Mono',monospace;background:var(--card2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.hero{padding:84px 0 0}.hero .grid{display:grid;grid-template-columns:1.05fr 1fr;gap:40px;align-items:center}
+.cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}
+.btn{display:inline-block;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:11px 18px;border-radius:12px;font-weight:600;font-size:14px;text-decoration:none;transition:transform .3s var(--ease),border-color .3s,box-shadow .3s}
+.btn:hover{transform:translateY(-2px);border-color:var(--a);box-shadow:0 8px 30px -10px var(--a)}.btn:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+.btn.p{background:linear-gradient(100deg,var(--a),var(--b));color:#031210;border-color:transparent}
+.badges{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}.badges img{height:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px}
+/* live feed */
+.feed{padding:16px;position:relative;overflow:hidden}
+.feed h3{font:500 11px/1 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:0 0 12px;display:flex;justify-content:space-between}
+.lane{position:relative;height:210px;border:1px solid var(--line);border-radius:12px;background:var(--card2);overflow:hidden}
+.gate{position:absolute;top:0;bottom:0;width:1px;background:linear-gradient(transparent,var(--b),transparent);opacity:.5}
+.gl{position:absolute;bottom:6px;font:500 10px 'JetBrains Mono',monospace;color:var(--mut);transform:translateX(-50%);white-space:nowrap}
+.ev{position:absolute;left:0;font:500 11px 'JetBrains Mono',monospace;padding:3px 7px;border-radius:7px;border:1px solid var(--line);background:var(--card);white-space:nowrap;will-change:transform,opacity}
+.ev.bad{border-color:var(--bad);color:var(--bad)}.ev.priv{border-color:#f59e0b;color:#f59e0b}
+.counters{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;font:500 12px 'JetBrains Mono',monospace}
+.counters div{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;color:var(--mut)}.counters b{display:block;font-size:20px;color:var(--fg)}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:40px}
+.stat{padding:20px}.stat b{display:block;font-size:clamp(30px,4vw,44px);letter-spacing:-.03em;font-weight:800;background:linear-gradient(100deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat span{color:var(--mut);font-size:14px}
+/* story */
+.story{padding:120px 0 0}.story p{font-size:clamp(26px,5vw,52px);line-height:1.12;letter-spacing:-.03em;font-weight:700;max-width:960px;margin:0}
+.story .w{color:var(--fg);transition:color .3s linear}.js .story .w{color:color-mix(in srgb,var(--fg) 22%,transparent)}.js .story .w.on{color:var(--fg)}
+/* pipeline */
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:28px;position:relative}
+.step{padding:18px;position:relative;transition:transform .4s var(--ease),border-color .4s,box-shadow .4s}
+.step:hover{transform:translateY(-4px);border-color:var(--a);box-shadow:0 14px 40px -18px var(--a)}
+.step .n{font:600 12px 'JetBrains Mono',monospace;color:var(--a)}.step h3{margin:6px 0 6px;font-size:18px;letter-spacing:-.02em}.step p{font-size:13.5px;color:var(--mut);margin:0}
+.js .steps .step::after{content:"";position:absolute;top:50%;right:-12px;width:12px;height:2px;background:linear-gradient(90deg,var(--a),transparent);opacity:.6}.steps .step:last-child::after{display:none}
+/* demo */
+.panel{padding:22px}
+.ctl{display:flex;gap:28px;flex-wrap:wrap;margin-bottom:18px}
+.ctl label{font-size:13px;color:var(--mut);display:flex;flex-direction:column;gap:6px;min-width:240px;flex:1}
+.ctl output{color:var(--fg);font:600 14px 'JetBrains Mono',monospace}
+input[type=range]{width:100%;accent-color:var(--a)}
+.bars{display:grid;gap:7px}
+.row{display:grid;grid-template-columns:210px 1fr 130px;gap:12px;align-items:center;font-size:13px}
+.track{position:relative;height:20px;background:var(--card2);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#334155,#475569);transition:width .5s var(--ease),background .3s;width:0}
+.fill.flag{background:linear-gradient(90deg,#b91c1c,var(--bad));box-shadow:0 0 18px -2px var(--bad)}
+.thr{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ok);transition:left .3s var(--ease)}
+.tag{font:12px 'JetBrains Mono',monospace;color:var(--mut);text-align:right}.tag.flag{color:var(--bad);font-weight:600}
+.verdict{margin-top:14px;font:500 14px 'JetBrains Mono',monospace}
+.issues{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:16px}
+.issue{padding:14px 16px;border-left:3px solid var(--bad);position:relative;animation:in .5s var(--ease)}
+.issue small{display:block;font:500 11px 'JetBrains Mono',monospace;color:var(--mut)}.issue b{font-size:14px}
+.stamp{position:absolute;right:10px;top:10px;font:700 10px 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--bad);border:2px solid var(--bad);border-radius:5px;padding:2px 6px;transform:rotate(-6deg);animation:stamp .5s var(--ease)}
+@keyframes stamp{from{opacity:0;transform:rotate(-14deg) scale(1.8)}to{opacity:1;transform:rotate(-6deg) scale(1)}}
+@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.mut{color:var(--mut)}.note{font-size:13px;color:var(--mut)}
+/* cards grid */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:24px}
+.tile{padding:20px;transition:transform .4s var(--ease),border-color .4s}.tile:hover{transform:translateY(-3px);border-color:var(--b)}
+.tile h3{margin:0 0 4px;font-size:17px;letter-spacing:-.01em}.tile .f{font:12px 'JetBrains Mono',monospace;color:var(--a)}
+.tile p{font-size:14px;color:var(--mut);margin:8px 0 0}
+.tile .gap{color:#f59e0b}
+.trade{display:grid;gap:12px;margin-top:24px}
+details.t{padding:0;overflow:hidden}details.t summary{cursor:pointer;list-style:none;padding:16px 20px;display:flex;gap:14px;align-items:baseline;font-weight:600}
+details.t summary::-webkit-details-marker{display:none}details.t summary:after{content:"+";margin-left:auto;font:500 20px 'JetBrains Mono',monospace;color:var(--a);transition:transform .3s}
+details.t[open] summary:after{transform:rotate(45deg)}details.t summary i{font:normal 500 12px 'JetBrains Mono',monospace;color:var(--mut)}
+.tb{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;padding:0 20px 18px;font-size:14px;color:var(--mut)}.tb b{display:block;color:var(--fg);font:600 11px 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.bug{padding:20px}.bug code{display:block;background:none;border:0;padding:0;color:var(--mut)}
+pre{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;overflow:auto;font:13px/1.6 'JetBrains Mono',monospace;margin:18px 0 0;position:relative}
+.copy{position:absolute;top:10px;right:10px;font:500 12px 'JetBrains Mono',monospace;background:var(--card2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
+footer{padding:80px 0 60px;color:var(--mut);font-size:14px}
+.js .reveal{opacity:0;transform:translate3d(0,38px,0) scale(.985);transition:opacity .9s var(--ease),transform .9s var(--ease);transition-delay:var(--d,0ms)}.js .reveal.in{opacity:1;transform:none}
+@media(max-width:900px){.hero .grid{grid-template-columns:1fr}.steps{grid-template-columns:1fr 1fr}.js .steps .step::after{display:none}.row{grid-template-columns:1fr;gap:3px}.tag{text-align:left}.nav nav a:nth-child(n+3){display:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}.js .reveal{opacity:1;transform:none}}
+
+
+.zones{position:relative;height:250px;border:1px solid var(--line);border-radius:12px;background:var(--card2);overflow:hidden}
+.zone{position:absolute;border:1px dashed var(--line);border-radius:12px;padding:8px 10px;font:600 11px 'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);background:color-mix(in srgb,var(--card) 70%,transparent)}
+.zone.ot{left:4%;top:60px;width:30%;height:130px;border-color:var(--bad)}.zone.ing{right:4%;top:16px;width:30%;height:90px;border-color:var(--a)}.zone.corp{right:4%;bottom:14px;width:30%;height:90px}
+.shield{position:absolute;left:36%;top:30px;bottom:30px;width:3px;background:linear-gradient(transparent,var(--b),transparent)}
+.pk{position:absolute;font:500 10px 'JetBrains Mono',monospace;padding:2px 6px;border-radius:6px;border:1px solid var(--ok);color:var(--ok);background:var(--card);white-space:nowrap;will-change:transform,opacity}
+.pk.no{border-color:var(--bad);color:var(--bad)}
+.dr{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 14px}
+.drive{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:var(--card2);font:600 12px 'JetBrains Mono',monospace;transition:all .5s var(--ease)}
+.drive small{display:block;color:var(--mut);font-weight:500;margin-top:3px}
+.drive.fail{border-color:var(--bad);color:var(--bad);box-shadow:0 0 26px -8px var(--bad);transform:translateY(4px)}
+.two>div{min-width:0}.term{max-width:100%;background:#0a0d14;color:#cbd5e1;border:1px solid var(--line);border-radius:12px;padding:14px;font:12px/1.6 'JetBrains Mono',monospace;white-space:pre;overflow:auto;max-height:290px}
+.term .p{color:#34d399}.term .f{color:#f87171;font-weight:600}.term .s{color:#94a3b8}
+@media(prefers-color-scheme:light){.term{background:#0f172a}}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:900px){.two{grid-template-columns:1fr}.dr{grid-template-columns:1fr 1fr}.zone{font-size:9px}}
+.mrow{display:grid;grid-template-columns:90px 160px 1fr 90px;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font:12px 'JetBrains Mono',monospace;align-items:center}
+.mrow .ok{color:var(--ok)}.mrow .bl{color:var(--bad)}
+@media(max-width:700px){.mrow{grid-template-columns:70px 130px 1fr}.mrow span:last-child{display:none}}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.chip{border:1px solid var(--line);background:var(--card2);color:var(--fg);border-radius:999px;padding:6px 12px;font:500 12px 'JetBrains Mono',monospace;cursor:pointer}.chip.on{border-color:var(--a);color:var(--a)}
+.mini{font:500 12px 'JetBrains Mono',monospace;padding:7px 14px;border-radius:10px;border:1px solid var(--a);background:transparent;color:var(--a);cursor:pointer}.mini:hover{background:var(--a);color:#031210}
+.verdict.fail{color:var(--bad)}.verdict.pass{color:var(--ok)}
+
+</style>
+</head>
+<body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="prog" id="prog"></div>
+<header class="nav"><div><a class="brand" href="#top"><span class="dot"></span>ingest-node-lab</a>
+<nav><a href="#fw">Firewall</a><a href="#raid">RAID</a><a href="#io">I/O gate</a><a href="#parts">Parts</a><a href="https://github.com/gerardrecinto/ingest-node-lab">GitHub</a></nav></div></header>
+<main id="top">
+<section class="hero"><div class="wrap grid">
+<div>
+<p class="eyebrow">Linux &middot; RAID &middot; ZFS &middot; NFS &middot; nftables</p>
+<h1>Take the data. Let <span class="grad">nothing in.</span></h1>
+<p class="lead">Ansible builds an ingest node. A push-only firewall is proven with real packets. A benchmark gate fails the build when I/O gets slower. All of it runs on a real Linux kernel in CI.</p>
+<div class="cta"><a class="btn p" href="#fw">See the packets</a><a class="btn" href="https://github.com/gerardrecinto/ingest-node-lab">Source on GitHub</a></div>
+<div class="badges"><a href="https://github.com/gerardrecinto/ingest-node-lab/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/gerardrecinto/ingest-node-lab/actions/workflows/ci.yml/badge.svg"></a><img alt="MIT" src="https://img.shields.io/github/license/gerardrecinto/ingest-node-lab"></div>
+</div>
+<div class="card feed reveal" aria-label="Animated sketch of a push-only network">
+<h3><span>live sketch</span><span>not real traffic</span></h3>
+<div class="zones" id="zones"><div class="zone ot">control host</div><div class="zone ing">ingest node</div><div class="zone corp">corporate</div><div class="shield"></div></div>
+<div class="counters"><div><b id="c-p">0</b>pushed</div><div><b id="c-d">0</b>dropped</div><div><b id="c-x">0</b>reached it</div></div>
+<p class="note" style="margin:10px 0 0">The control host may open one kind of connection out. Every attempt to reach it is dropped without a reply.</p>
+</div></div>
+<div class="wrap"><div class="stats">
+<div class="card stat reveal"><b data-n="12">12</b><span>tests passing, as root, on a real kernel</span></div>
+<div class="card stat reveal" style="--d:80ms"><b>10 of 10</b><span>firewall cases behave as expected</span></div>
+<div class="card stat reveal" style="--d:160ms"><b data-n="0">0</b><span>changes on the second Ansible run</span></div>
+<div class="card stat reveal" style="--d:240ms"><b>completed</b><span>Slurm benchmark job state</span></div>
+</div></div></section>
+
+<section class="story"><div class="wrap"><p id="story">A control host may push data out. Nothing may connect in. This lab proves both with real packets, including ports where something is listening, and counts what it dropped.</p></div></section>
+
+<section id="fw"><div class="wrap">
+<p class="eyebrow reveal">Prove the firewall</p><h2 class="reveal">Real connections, three network namespaces</h2>
+<p class="lead reveal">Each namespace listens on 22, 8080 and 9000, so a blocked connection is blocked by the rules and not by a closed port. Results below are from the CI run, not simulated.</p>
+<div class="card panel reveal" style="margin-top:22px">
+<div class="chips" id="fchips"></div>
+<div id="frows"></div>
+<p class="verdict" id="fverdict" style="margin-top:12px"></p>
+<p class="note">Before the rules are loaded, <code>ot to ingest:8080</code> and <code>ingest to ot:22</code> both connect. A 1 MiB payload pushed from the control host arrives with a matching checksum. Drop counters after the run: inbound 6, egress 7.</p>
+</div></div></section>
+
+<section id="raid"><div class="wrap">
+<p class="eyebrow reveal">Fail a drive</p><h2 class="reveal">RAID 10 over four backing devices</h2>
+<p class="lead reveal">Ansible builds RAID 10, LVM, XFS, a ZFS mirror and an NFSv4.2 mount. Then CI fails one member on purpose. These are the real outputs from that run.</p>
+<div class="card panel reveal" style="margin-top:22px">
+<div class="dr" id="drives"></div>
+<button class="mini" id="fail" type="button">Fail disk0</button> <button class="mini" id="heal" type="button" style="display:none">Back to healthy</button>
+<div class="two" style="margin-top:14px"><div><p class="note" style="margin:0 0 6px"><b>bin/node-validate</b></p><div class="term" id="t1"></div></div><div><p class="note" style="margin:0 0 6px"><b>edgeprobe analyze</b> (only after the failure)</p><div class="term" id="t2"></div></div></div>
+</div></div></section>
+
+<section id="io"><div class="wrap">
+<p class="eyebrow reveal">I/O regression gate</p><h2 class="reveal">Slower than the baseline? The build fails.</h2>
+<p class="lead reveal">fio runs a 1 MiB sequential write and a 4 KiB random read, <code>O_DIRECT</code>. The gate compares bandwidth and p99 latency with a stored baseline. The capped run is the same job with <code>--rate_iops=50</code>. These are loop-backed devices on a shared runner, so the numbers show the method, not hardware speed.</p>
+<div class="card panel reveal" style="margin-top:22px">
+<div class="ctl"><label>Allowed bandwidth drop <output id="bo">20%</output><input id="bw" type="range" min="0" max="90" value="20" aria-label="Bandwidth drop"></label>
+<label>Allowed p99 rise <output id="po">50%</output><input id="p99" type="range" min="0" max="500" step="10" value="50" aria-label="p99 rise"></label></div>
+<div class="bars" id="gbars"></div><p class="verdict" id="gverdict" style="margin-top:12px"></p>
+<p class="note" style="margin-top:12px">Same sequential write over NFSv4.2 to localhost: 124.1 MiB/s, p99 333.447 ms. Localhost proves the mount options and plumbing, not network behaviour.</p>
+</div></div></section>
+
+<section id="parts"><div class="wrap">
+<p class="eyebrow reveal">What each part shows</p><h2 class="reveal">Real, tested, and where it stops</h2>
+<div class="cards">
+<div class="card tile reveal"><h3>Storage tiers</h3><div class="f">ansible/roles/storage</div><p>mdadm RAID 10, LVM, XFS, ZFS mirror (lz4, 1M records). Built twice, second run changes nothing. <span class="gap">Loop files, not NVMe. No BeeGFS.</span></p></div>
+<div class="card tile reveal" style="--d:60ms"><h3>NFS</h3><div class="f">ansible/roles/nfs</div><p>NFSv4.2, TCP, hard, 1 MiB transfers, nconnect=4. The validator fails soft, v3 or small-transfer mounts. <span class="gap">Localhost only. No 100GbE, no RoCE.</span></p></div>
+<div class="card tile reveal" style="--d:120ms"><h3>Push-only firewall</h3><div class="f">firewall/ot-push-only.nft</div><p>Policy drop in input, forward and output; one allowed outbound. Proven in namespaces. <span class="gap">Not a real switch or VLAN.</span></p></div>
+<div class="card tile reveal"><h3>Kernel tuning</h3><div class="f">90-ingest.conf</div><p>Buffers, backlog, dirty ratios. Applied by Ansible and audited for drift. <span class="gap">Starting values, not measured on 100GbE.</span></p></div>
+<div class="card tile reveal" style="--d:60ms"><h3>fio gate</h3><div class="f">src/ingestlab/bench.py</div><p>Bandwidth and p99 against a baseline; a capped run must fail. <span class="gap">A shared runner is noisy, so CI limits are wide.</span></p></div>
+<div class="card tile reveal" style="--d:120ms"><h3>Validation</h3><div class="f">bin/node-validate</div><p>Shellcheck-clean Bash: sysctl drift, mounts, NFS options, RAID, ZFS, firewall. Exit 1 on any failure. JSON mode.</p></div>
+<div class="card tile reveal"><h3>Slurm</h3><div class="f">ansible/roles/slurm</div><p>One node as controller and compute, the benchmark runs as a batch job. <span class="gap">No multi-node, no accounting, no PBS.</span></p></div>
+<div class="card tile reveal" style="--d:60ms"><h3>RHEL family</h3><div class="f">CI job</div><p>Hardware-free roles run twice on Rocky Linux 9. <span class="gap">Not licensed RHEL.</span></p></div>
+<div class="card tile reveal" style="--d:120ms"><h3>Not covered</h3><div class="f">honest list</div><p><span class="gap">No racking or cabling. No 100GbE, RoCE or BeeGFS. No NVMe tuning. No vendor BOMs. Kafka and Redis are in separate labs.</span></p></div>
+</div></div></section>
+
+<section id="tradeoffs"><div class="wrap">
+<p class="eyebrow reveal">Decisions and trade-offs</p><h2 class="reveal">Why this and not that</h2>
+<p class="mut reveal">All design-only: nothing here ran in production.</p>
+<div class="trade">
+<details class="card t reveal" open><summary>RAID 10 <i>over RAID 5 or 6</i></summary><div class="tb"><div><b>Why</b>No parity write penalty, fast rebuilds.</div><div><b>Costs</b>Half the capacity is gone.</div><div><b>Flip when</b>Capacity per rack unit matters more than write latency.</div></div></details>
+<details class="card t reveal"><summary>ZFS mirror <i>over mdadm and XFS</i></summary><div class="tb"><div><b>Why</b>Checksums, snapshots, compression, scrubs.</div><div><b>Costs</b>RAM for the ARC, CPU, an out-of-tree module on Linux.</div><div><b>Flip when</b>Raw speed matters more than integrity checks.</div></div></details>
+<details class="card t reveal"><summary>Hard NFS mounts <i>over soft</i></summary><div class="tb"><div><b>Why</b>A soft mount can return an error and lose writes.</div><div><b>Costs</b>A hung server blocks clients.</div><div><b>Flip when</b>A failed write is better than a hang.</div></div></details>
+<details class="card t reveal"><summary>Stateful firewall with drop <i>over a hardware data diode</i></summary><div class="tb"><div><b>Why</b>Flexible and testable in CI.</div><div><b>Costs</b>A diode gives a physical one-way guarantee; rules do not.</div><div><b>Flip when</b>A regulation or threat model needs physical one-way.</div></div></details>
+<details class="card t reveal"><summary>Silent drop <i>over reject</i></summary><div class="tb"><div><b>Why</b>Tells a scanner nothing.</div><div><b>Costs</b>Debugging is slower.</div><div><b>Flip when</b>The segment is internal and fast failure helps.</div></div></details>
+<details class="card t reveal"><summary>p99 latency in the gate <i>over averages</i></summary><div class="tb"><div><b>Why</b>Shows stalls that an average hides.</div><div><b>Costs</b>Needs more samples to be stable.</div><div><b>Flip when</b>The workload is throughput-only batch.</div></div></details>
+</div></div></section>
+
+<section><div class="wrap">
+<p class="eyebrow reveal">Run it</p><h2 class="reveal">Tests in a minute, the full node in a VM</h2>
+<p class="mut reveal">Tests need Linux with root, nftables, iproute2 and fio. The Ansible build needs a Linux machine you do not mind changing (it creates md, LVM, ZFS and NFS state).</p>
+<pre class="reveal" id="cmd">git clone https://github.com/gerardrecinto/ingest-node-lab
+cd ingest-node-lab
+sudo apt-get install -y nftables iproute2 fio python3-pytest
+sudo python3 -m pytest -q
+sudo PYTHONPATH=src python3 -m ingestlab fw<button class="copy" id="copy" type="button">Copy</button></pre>
+</div></section>
+</main>
+<footer><div class="wrap">MIT license. Personal project, loop-backed devices on a shared CI runner, not a production system. <a href="https://github.com/gerardrecinto/ingest-node-lab">Source</a></div></footer>
+<script>
+const DATA={"fw":{"rows":[{"from":"ot","to":"10.10.1.2:9000","expected":"connected","result":"connected","ok":true},{"from":"ot","to":"10.10.1.2:8080","expected":"blocked","result":"timeout","ok":true},{"from":"ot","to":"10.10.1.2:22","expected":"blocked","result":"timeout","ok":true},{"from":"ot","to":"10.10.2.2:9000","expected":"blocked","result":"timeout","ok":true},{"from":"ingest","to":"10.10.1.1:22","expected":"blocked","result":"timeout","ok":true},{"from":"ingest","to":"10.10.1.1:8080","expected":"blocked","result":"timeout","ok":true},{"from":"ingest","to":"10.10.1.1:9000","expected":"blocked","result":"timeout","ok":true},{"from":"corp","to":"10.10.2.1:22","expected":"blocked","result":"timeout","ok":true},{"from":"corp","to":"10.10.2.1:8080","expected":"blocked","result":"timeout","ok":true},{"from":"corp","to":"10.10.2.1:9000","expected":"blocked","result":"timeout","ok":true}],"before":{"ot_to_ingest_8080":"connected","ingest_to_ot_22":"connected"},"counters":{"inbound_dropped":6,"egress_dropped":7},"payload":true},"tier":{"seq_write_1m":{"bw_mib_s":6038.8,"iops":6039,"p99_ms":3.785},"rand_read_4k":{"bw_mib_s":512.2,"iops":131127,"p99_ms":0.281}},"capped":{"seq_write_1m":{"bw_mib_s":50.0,"iops":50,"p99_ms":0.208},"rand_read_4k":{"bw_mib_s":0.2,"iops":50,"p99_ms":0.057}},"nfs":{"seq_write_1m":{"bw_mib_s":124.1,"iops":124,"p99_ms":333.447},"rand_read_4k":{"bw_mib_s":303.1,"iops":77586,"p99_ms":0.897}}};
+const TEXT={"ok": "PASS  sysctl-profile     all keys match\nPASS  mount /srv/ingest/nvme xfs\nPASS  nfs /mnt/ingest-nfs rw,relatime,vers=4.2,rsize=1048576,wsize=1048576,namlen=255,hard,fatal_neterrors=none,proto=tcp,nconnect=4,timeo=600,retrans=2,sec=sys,clientaddr=127.0.0.1,local_lock=none,addr=127.0.0.1\nPASS  md-raid            all members up\nPASS  zfs-pools          all pools are healthy\nSKIP  firewall-input     pass --expect-firewall to check\n", "bad": "PASS  sysctl-profile     all keys match\nPASS  mount /srv/ingest/nvme xfs\nFAIL  md-raid            degraded array in mdstat\nPASS  zfs-pools          all pools are healthy\nSKIP  firewall-input     pass --expect-firewall to check\n", "ep": "  edgeprobe\n  \u2717  ACTION REQUIRED\n  snapshot:   snap\n  kernel:     7.0.0-1017-azure\n  confidence: 81%\n  SUMMARY\n  1 critical and 0 warning signal(s) found across Linux edge readiness checks.\n  SIGNALS\n  - CRITICAL \u00b7 storage\n    Software RAID array is degraded\n    evidence: md127 [4/3] [_UUU]\n    fix: Replace the failed member and start a rebuild now. Another failure on a RAID 5 or RAID 10 pair loses data. Check smartctl on the survivors first.\n  PASSED CHECKS\n  - driver log scan\n  - network route and socket scan\n  - kubernetes event scan\n  - docker runtime health\n  - gpu inventory\n  - wireless telemetry absent\n  - realtime kernel latency scan\n  - os build provenance\n  - nfs mount options"};
+function gate(base,cand,bwDrop,p99Rise){const f=[];for(const k in base){const b=base[k],c=cand[k];if(!c){f.push(k+": missing");continue}
+ if(c.bw_mib_s<b.bw_mib_s*(1-bwDrop))f.push(k+": bandwidth "+b.bw_mib_s+" -> "+c.bw_mib_s+" MiB/s");
+ if(c.p99_ms>b.p99_ms*(1+p99Rise))f.push(k+": p99 "+b.p99_ms+" -> "+c.p99_ms+" ms")}return f}
+</script>
+<script>
+(function(){
+function esc(s){return s.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+// firewall table
+var rows=DATA.fw.rows,sel='all',ch=document.getElementById('fchips');
+['all','ot','ingest','corp'].forEach(function(s){var b=document.createElement('button');b.type='button';b.className='chip'+(s===sel?' on':'');b.textContent=s==='all'?'all':'from '+s;b.onclick=function(){sel=s;ch.querySelectorAll('.chip').forEach(function(c){c.classList.remove('on')});b.classList.add('on');draw()};ch.appendChild(b)});
+function draw(){var shown=rows.filter(function(r){return sel==='all'||r.from===sel});
+ document.getElementById('frows').innerHTML=shown.map(function(r){var good=r.ok;return '<div class="mrow"><span>'+r.from+'</span><span>'+r.to+'</span><span class="'+(r.result==='connected'?'ok':'bl')+'">'+(r.result==='connected'?'connected':'dropped (timeout)')+'</span><span class="'+(good?'ok':'bl')+'">'+(good?'as expected':'WRONG')+'</span></div>'}).join('');
+ var okc=rows.filter(function(r){return r.ok}).length;var v=document.getElementById('fverdict');v.className='verdict '+(okc===rows.length?'pass':'fail');v.textContent=okc+' of '+rows.length+' cases behave as expected. Payload checksum '+(DATA.fw.payload?'matched':'did not match')+'.'}
+draw();
+// RAID
+var dr=document.getElementById('drives');
+for(var i=0;i<4;i++){var d=document.createElement('div');d.className='drive';d.dataset.i=i;d.innerHTML='disk'+i+'<small>loop-backed</small>';dr.appendChild(d)}
+function colour(t){return esc(t).replace(/^(PASS)(.*)$/gm,'<span class="p">$1</span>$2').replace(/^(FAIL)(.*)$/gm,'<span class="f">$1</span>$2').replace(/^(SKIP)(.*)$/gm,'<span class="s">$1</span>$2')}
+var t1=document.getElementById('t1'),t2=document.getElementById('t2'),fb=document.getElementById('fail'),hb=document.getElementById('heal');
+function show(bad){dr.firstChild.classList.toggle('fail',bad);t1.innerHTML=colour(bad?TEXT.bad:TEXT.ok);t2.innerHTML=bad?esc(TEXT.ep):'<span class="s">Run after a failure to see the report.</span>';fb.style.display=bad?'none':'inline-block';hb.style.display=bad?'inline-block':'none'}
+fb.onclick=function(){show(true)};hb.onclick=function(){show(false)};show(false);
+// gate
+var bw=document.getElementById('bw'),pr=document.getElementById('p99'),gb=document.getElementById('gbars');
+function g(){var b=+bw.value/100,p=+pr.value/100;document.getElementById('bo').textContent=Math.round(b*100)+'%';document.getElementById('po').textContent=Math.round(p*100)+'%';
+ var f=gate(DATA.tier,DATA.capped,b,p);
+ gb.innerHTML=Object.keys(DATA.tier).map(function(k){var a=DATA.tier[k],c=DATA.capped[k],drop=(c.bw_mib_s/a.bw_mib_s),bad=f.some(function(x){return x.indexOf(k)===0});
+  return '<div class="row"><span>'+k+'</span><div class="track"><div class="fill'+(bad?' flag':'')+'" style="width:'+Math.max(2,Math.min(100,drop*100))+'%"></div><div class="thr" style="left:'+(100-b*100)+'%"></div></div><span class="tag'+(bad?' flag':'')+'">'+a.bw_mib_s+' to '+c.bw_mib_s+' MiB/s'+(bad?' FAIL':'')+'</span></div>'}).join('');
+ var v=document.getElementById('gverdict');v.className='verdict '+(f.length?'fail':'pass');v.textContent=f.length?f.length+' check(s) fail, so CI would fail this run':'The capped run would pass at these limits.'}
+bw.addEventListener('input',g);pr.addEventListener('input',g);g();
+// zones animation
+var z=document.getElementById('zones'),cp=0,cd=0,cx=0,rm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+var P=document.getElementById('c-p'),D=document.getElementById('c-d'),X=document.getElementById('c-x');
+function pk(txt,y0,y1,x0,x1,bad,dur){var e=document.createElement('span');e.className='pk'+(bad?' no':'');e.textContent=txt;e.style.top=y0+'px';e.style.left=x0+'px';z.appendChild(e);
+ var a=e.animate([{transform:'translate(0,0)',opacity:0},{opacity:1,offset:.15},{transform:'translate('+(x1-x0)+'px,'+(y1-y0)+'px)',opacity:bad?1:1,offset:bad?.55:.9},{transform:'translate('+(bad?(x1-x0)*.9:(x1-x0))+'px,'+(y1-y0+(bad?30:0))+'px)',opacity:0}],{duration:dur,easing:'linear',fill:'forwards'});a.onfinish=function(){e.remove()}}
+function tick(){if(document.hidden)return;var W=z.clientWidth,r=Math.random();
+ if(r<.5){pk('9000 push',100,60,W*.14,W*.78,false,3200);cp++;P.textContent=cp}
+ else if(r<.8){pk('ssh 22',34,100,W*.66,W*.37,true,2600);cd++;D.textContent=cd}
+ else{pk('8080',190,120,W*.66,W*.37,true,2600);cd++;D.textContent=cd}}
+if(!rm){setInterval(tick,700);tick()}else{P.textContent='1 MiB';D.textContent='6';}
+})();
+</script>
+<script>
+(function(){
+var rm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+var p=document.getElementById('prog');
+function sp(){var h=document.documentElement;p.style.transform='scaleX('+Math.min(1,h.scrollTop/(h.scrollHeight-h.clientHeight||1))+')'}
+addEventListener('scroll',sp,{passive:true});sp();
+// story words
+var st=document.getElementById('story'),words=st.textContent.trim().split(/\s+/);
+st.innerHTML=words.map(function(w){return '<span class="w">'+w+'</span> '}).join('');
+var ws=st.querySelectorAll('.w');
+function story(){var r=st.getBoundingClientRect(),vh=innerHeight,pr=Math.min(1,Math.max(0,(vh*.85-r.top)/(vh*.55+r.height*.6)));var n=Math.round(pr*ws.length);ws.forEach(function(e,i){e.classList.toggle('on',i<n)})}
+if(!rm){addEventListener('scroll',story,{passive:true});story()}else ws.forEach(function(e){e.classList.add('on')});
+// reveal
+var els=document.querySelectorAll('.reveal');
+if('IntersectionObserver' in window&&!rm){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12,rootMargin:'0px 0px -6% 0px'});els.forEach(function(e){io.observe(e)})}else els.forEach(function(e){e.classList.add('in')});
+// count up
+document.querySelectorAll('[data-n]').forEach(function(e){var t=+e.dataset.n;if(rm)return;var done=false;new IntersectionObserver(function(es,o){if(es[0].isIntersecting&&!done){done=true;var s=performance.now();(function f(n){var k=Math.min(1,(n-s)/1200),v=Math.round(t*(1-Math.pow(1-k,3)));e.textContent=v.toLocaleString('en-US');if(k<1)requestAnimationFrame(f)})(s);o.disconnect()}}).observe(e)});
+// copy
+var cb=document.getElementById('copy');cb.addEventListener('click',function(){var t=document.getElementById('cmd').innerText.replace(/Copy$/,'').trim();try{navigator.clipboard.writeText(t).then(function(){cb.textContent='Copied';setTimeout(function(){cb.textContent='Copy'},1600)})}catch(e){var r=document.createRange();r.selectNodeContents(document.getElementById('cmd'));getSelection().removeAllRanges();getSelection().addRange(r);cb.textContent='Select + copy'}});
+})();
+
+</script>
+</body>
+</html>

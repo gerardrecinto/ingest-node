@@ -86,7 +86,7 @@ jobs:
       - name: Same failure through edgeprobe, from the live host
         run: |
           git clone --depth 1 https://github.com/gerardrecinto/edgeprobe /tmp/edgeprobe
-          /tmp/edgeprobe/scripts/collect_storage.sh /tmp/snap
+          sudo /tmp/edgeprobe/scripts/collect_storage.sh /tmp/snap
           cd /tmp/edgeprobe
           set +e
           PYTHONPATH=src python -m edgeprobe analyze /tmp/snap | tee "$GITHUB_WORKSPACE/out/edgeprobe-degraded.txt"

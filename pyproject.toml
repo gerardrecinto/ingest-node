@@ -1,0 +1,18 @@
+[project]
+name = "ingest-node-lab"
+version = "0.1.0"
+description = "Linux data-ingest node lab: storage tiers, NFS, a push-only firewall proven in network namespaces, an fio regression gate. Runs on a real kernel in CI."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110

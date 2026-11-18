@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Post-provision checks for an ingest node. Prints PASS, FAIL or SKIP per check.
+# Exit 1 if any check fails. PROC_ROOT lets the tests run on fixture files.
+#   node-validate [--json] [--mount PATH:FSTYPE]... [--nfs-mount PATH]... [--expect-firewall]
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROC="${PROC_ROOT:-/proc}"
+PROFILE="${PROFILE:-$here/../ansible/roles/tuning/files/90-ingest.conf}"
+json=0 fw=0 mounts=() nfs=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1 ;;
+    --expect-firewall) fw=1 ;;
+    --mount) shift; mounts+=("$1") ;;
+    --nfs-mount) shift; nfs+=("$1") ;;
+    -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+results=()
+fails=0
+record() { # status name detail
+  results+=("$1|$2|$3")
+  [ "$1" = FAIL ] && fails=$((fails + 1))
+}
+
+# 1. kernel parameters match the profile
+drift=""
+while IFS= read -r line; do
+  case "$line" in ''|'#'*) continue ;; esac
+  key="${line%%=*}"; want="${line#*=}"
+  key="$(echo "$key" | tr -d ' ')"
+  want="$(echo "$want" | tr -s ' \t' ' ' | sed 's/^ //; s/ $//')"
+  file="$PROC/sys/${key//.//}"
+  if [ ! -r "$file" ]; then drift="$drift $key(unreadable)"; continue; fi
+  have="$(tr -s ' \t' ' ' < "$file" | sed 's/^ //; s/ $//')"
+  [ "$have" = "$want" ] || drift="$drift $key(have $have, want $want)"
+done < "$PROFILE"
+if [ -z "$drift" ]; then record PASS sysctl-profile "all keys match"; else record FAIL sysctl-profile "drift:$drift"; fi
+
+# 2. mounts have the expected filesystem
+for spec in "${mounts[@]+"${mounts[@]}"}"; do
+  path="${spec%%:*}"; want="${spec##*:}"
+  have="$(awk -v p="$path" '$2==p {print $3}' "$PROC/mounts" | tail -1)"
+  if [ "$have" = "$want" ]; then record PASS "mount $path" "$have"; else record FAIL "mount $path" "have '${have:-none}', want $want"; fi
+done
+
+# 3. NFS mounts use v4, hard, and a large rsize
+for path in "${nfs[@]+"${nfs[@]}"}"; do
+  opts="$(awk -v p="$path" '($3 ~ /^nfs/) && $2==p {print $4}' "$PROC/mounts" | tail -1)"
+  if [ -z "$opts" ]; then record FAIL "nfs $path" "not mounted"; continue; fi
+  bad=""
+  case ",$opts," in *,vers=4*) ;; *) bad="$bad not-v4" ;; esac
+  case ",$opts," in *,hard,*) ;; *) bad="$bad not-hard" ;; esac
+  rs="$(echo "$opts" | tr ',' '\n' | sed -n 's/^rsize=//p')"
+  [ "${rs:-0}" -ge 1048576 ] 2>/dev/null || bad="$bad rsize<1MiB"
+  if [ -z "$bad" ]; then record PASS "nfs $path" "$opts"; else record FAIL "nfs $path" "$bad"; fi
+done
+
+# 4. software RAID is not degraded
+if [ -r "$PROC/mdstat" ] && grep -q '^md' "$PROC/mdstat"; then
+  if grep -Eq '\[[U_]*_[U_]*\]' "$PROC/mdstat"; then record FAIL md-raid "degraded array in mdstat"; else record PASS md-raid "all members up"; fi
+else
+  record SKIP md-raid "no md arrays"
+fi
+
+# 5. ZFS pools healthy
+if command -v zpool >/dev/null 2>&1 && [ "$(zpool list -H 2>/dev/null | wc -l)" -gt 0 ]; then
+  out="$(zpool status -x 2>&1)"
+  if [ "$out" = "all pools are healthy" ]; then record PASS zfs-pools "$out"; else record FAIL zfs-pools "$(echo "$out" | head -1)"; fi
+else
+  record SKIP zfs-pools "no zfs pools"
+fi
+
+# 6. firewall default is drop on input
+if [ "$fw" = 1 ]; then
+  if nft list ruleset 2>/dev/null | grep -Eq 'hook input.*policy drop'; then record PASS firewall-input "policy drop"; else record FAIL firewall-input "input policy is not drop"; fi
+else
+  record SKIP firewall-input "pass --expect-firewall to check"
+fi
+
+if [ "$json" = 1 ]; then
+  printf '['
+  sep=''
+  for r in "${results[@]}"; do
+    IFS='|' read -r s n d <<< "$r"
+    printf '%s{"status":"%s","check":"%s","detail":"%s"}' "$sep" "$s" "$n" "${d//\"/\'}"
+    sep=','
+  done
+  printf ']\n'
+else
+  for r in "${results[@]}"; do
+    IFS='|' read -r s n d <<< "$r"
+    printf '%-5s %-18s %s\n' "$s" "$n" "$d"
+  done
+fi
+[ "$fails" -eq 0 ]

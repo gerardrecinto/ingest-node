@@ -1,0 +1,8 @@
+- name: Build an ingest node
+  hosts: ingest
+  become: true
+  roles:
+    - { role: tuning, tags: [tuning] }
+    - { role: storage, tags: [storage] }
+    - { role: nfs, tags: [nfs] }
+    - { role: firewall, tags: [firewall] }

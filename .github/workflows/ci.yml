@@ -1,0 +1,89 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y nftables iproute2 fio shellcheck
+      - run: pip install pytest ruff
+      - run: ruff check src tests
+      - run: shellcheck bin/node-validate
+      - name: Tests, as root so the network namespace test runs
+        run: sudo -E env "PATH=$PATH" python -m pytest -q -rs
+
+  provision:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y nftables iproute2 fio
+      - run: pip install ansible-core
+      - run: ansible-galaxy collection install -r ansible/requirements.yml
+      - name: Syntax check
+        run: ansible-playbook ansible/site.yml --syntax-check
+      - name: Build the node
+        run: ansible-playbook ansible/site.yml -e zfs_enabled=true | tee out-run1.txt
+      - name: Second run must change nothing
+        run: |
+          ansible-playbook ansible/site.yml -e zfs_enabled=true | tee out-run2.txt
+          grep -E "ok=.*changed=0 " out-run2.txt
+      - name: Layout
+        run: |
+          cat /proc/mdstat; sudo lvs; findmnt /srv/ingest/nvme /mnt/ingest-nfs
+          sudo zpool status 2>&1 | head -5 || true
+      - name: Validate the node
+        run: sudo bin/node-validate --mount /srv/ingest/nvme:xfs --nfs-mount /mnt/ingest-nfs | tee validate-ok.txt
+      - name: Benchmark the tier and the NFS mount, then gate a repeat run
+        run: |
+          mkdir -p out
+          sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab bench /srv/ingest/nvme --out out/tier-base.json
+          sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab bench /mnt/ingest-nfs --out out/nfs-base.json
+          # A repeat on a shared runner is noisy, so the limits are wide here.
+          sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab bench /srv/ingest/nvme --baseline out/tier-base.json --bw-drop 0.6 --p99-rise 5
+      - name: A capped run must fail the gate
+        run: |
+          if sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab bench /srv/ingest/nvme --baseline out/tier-base.json --rate-iops 50 --out out/tier-capped.json; then
+            echo "capped run passed the gate"; exit 1; fi
+      - name: Push-only firewall in namespaces
+        run: sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab fw --json out/firewall.json
+      - name: Fail one RAID member, validation must catch it
+        run: |
+          dev=$(losetup -j /var/lib/ingest-lab/disk0.img | cut -d: -f1)
+          sudo mdadm --manage /dev/md/ingest --fail "$dev"
+          if sudo bin/node-validate --mount /srv/ingest/nvme:xfs | tee validate-degraded.txt; then
+            echo "degraded array passed validation"; exit 1; fi
+          grep "FAIL  md-raid" validate-degraded.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence
+          path: |
+            out/
+            out-run1.txt
+            out-run2.txt
+            validate-ok.txt
+            validate-degraded.txt
+
+  rhel-family:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Roles that need no hardware, on a RHEL-compatible image, twice
+        run: |
+          docker run --rm --cap-add NET_ADMIN -v "$PWD":/w -w /w/ansible rockylinux:9 bash -c '
+            dnf -q -y install ansible-core nftables >/dev/null
+            ansible-galaxy collection install -r requirements.yml >/dev/null
+            ansible-playbook site.yml --tags tuning,firewall -e apply_sysctl=false
+            ansible-playbook site.yml --tags tuning,firewall -e apply_sysctl=false | tee /tmp/r2
+            grep -E "ok=.*changed=0 " /tmp/r2'

@@ -1,0 +1,4 @@
+- name: apply sysctl
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/90-ingest.conf
+  when: apply_sysctl | bool
+  changed_when: true

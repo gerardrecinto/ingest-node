@@ -1,0 +1,9 @@
+lab_dir: /var/lib/ingest-lab
+loop_size: 512M
+raid_members: 4
+vg_name: vg_ingest
+tier_mount: /srv/ingest/nvme
+nfs_mount: /mnt/ingest-nfs
+zfs_enabled: false
+zfs_mount: /srv/ingest/zfs
+apply_sysctl: true

@@ -1,0 +1,28 @@
+- name: NFS server package
+  ansible.builtin.package:
+    name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-utils' }}"
+    state: present
+
+- name: Export the tier to localhost
+  ansible.builtin.lineinfile:
+    path: /etc/exports
+    line: "{{ tier_mount }} 127.0.0.1(rw,sync,no_subtree_check,no_root_squash)"
+    create: true
+    mode: "0644"
+  notify: reload exports
+
+- name: Run the NFS server
+  ansible.builtin.service:
+    name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
+    state: started
+
+- name: Flush handlers before mounting
+  ansible.builtin.meta: flush_handlers
+
+- name: Mount over NFSv4.2, TCP, 1 MiB transfers, 4 connections
+  ansible.posix.mount:
+    path: "{{ nfs_mount }}"
+    src: "127.0.0.1:{{ tier_mount }}"
+    fstype: nfs4
+    opts: vers=4.2,proto=tcp,hard,rsize=1048576,wsize=1048576,nconnect=4
+    state: mounted

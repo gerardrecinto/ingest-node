@@ -1,0 +1,12 @@
+- name: Make sure the drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/sysctl.d
+    state: directory
+    mode: "0755"
+
+- name: Install the kernel parameter profile
+  ansible.builtin.copy:
+    src: 90-ingest.conf
+    dest: /etc/sysctl.d/90-ingest.conf
+    mode: "0644"
+  notify: apply sysctl

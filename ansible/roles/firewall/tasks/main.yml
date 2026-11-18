@@ -1,0 +1,18 @@
+# The ruleset is installed and syntax-checked against the kernel, not applied:
+# it is a push-only policy for a control host, and applying it here would lock
+# this machine out. tests/test_fw.py applies it inside a network namespace.
+- name: Rules directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Install the push-only ruleset
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../firewall/ot-push-only.nft"
+    dest: /etc/nftables.d/ot-push-only.nft
+    mode: "0644"
+
+- name: Check the ruleset with the kernel without applying it
+  ansible.builtin.command: nft -c -f /etc/nftables.d/ot-push-only.nft
+  changed_when: false

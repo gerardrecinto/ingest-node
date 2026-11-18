@@ -1,0 +1,101 @@
+# Loop files stand in for NVMe drives so this runs anywhere. On real hardware
+# set raid_devices to the drive paths and skip the loop tasks.
+- name: Storage packages
+  ansible.builtin.package:
+    name: [mdadm, lvm2, xfsprogs]
+    state: present
+
+- name: Backing file directory
+  ansible.builtin.file:
+    path: "{{ lab_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Backing files
+  ansible.builtin.command: truncate -s {{ loop_size }} {{ lab_dir }}/disk{{ item }}.img
+  args:
+    creates: "{{ lab_dir }}/disk{{ item }}.img"
+  loop: "{{ range(raid_members) | list }}"
+
+- name: Look up existing loop devices
+  ansible.builtin.shell: "losetup -j {{ lab_dir }}/disk{{ item }}.img | cut -d: -f1"
+  register: existing
+  changed_when: false
+  loop: "{{ range(raid_members) | list }}"
+
+- name: Attach missing loop devices
+  ansible.builtin.command: losetup --find {{ lab_dir }}/disk{{ item.item }}.img
+  when: item.stdout == ""
+  loop: "{{ existing.results }}"
+  loop_control:
+    label: "disk{{ item.item }}"
+
+- name: Read loop device names
+  ansible.builtin.shell: "losetup -j {{ lab_dir }}/disk{{ item }}.img | cut -d: -f1"
+  register: loops
+  changed_when: false
+  loop: "{{ range(raid_members) | list }}"
+
+- name: RAID 10 array
+  ansible.builtin.command: >
+    mdadm --create /dev/md/ingest --level=10 --raid-devices={{ raid_members }}
+    --metadata=1.2 --run {{ loops.results | map(attribute='stdout') | join(' ') }}
+  args:
+    creates: /dev/md/ingest
+
+- name: Resolve the array device
+  ansible.builtin.command: readlink -f /dev/md/ingest
+  register: md_dev
+  changed_when: false
+
+- name: Volume group
+  community.general.lvg:
+    vg: "{{ vg_name }}"
+    pvs: "{{ md_dev.stdout }}"
+
+- name: Logical volume takes all space
+  community.general.lvol:
+    vg: "{{ vg_name }}"
+    lv: data
+    size: 100%FREE
+
+- name: XFS filesystem
+  community.general.filesystem:
+    fstype: xfs
+    dev: "/dev/{{ vg_name }}/data"
+
+- name: Mount the tier
+  ansible.posix.mount:
+    path: "{{ tier_mount }}"
+    src: "/dev/{{ vg_name }}/data"
+    fstype: xfs
+    opts: noatime,nodiratime
+    state: mounted
+
+- name: ZFS mirror, when the kernel has the module
+  when: zfs_enabled | bool
+  block:
+    - name: Load ZFS
+      ansible.builtin.command: modprobe zfs
+      changed_when: false
+    - name: ZFS packages
+      ansible.builtin.package:
+        name: "{{ 'zfsutils-linux' if ansible_os_family == 'Debian' else 'zfs' }}"
+        state: present
+    - name: Two more backing files
+      ansible.builtin.command: truncate -s {{ loop_size }} {{ lab_dir }}/zfs{{ item }}.img
+      args:
+        creates: "{{ lab_dir }}/zfs{{ item }}.img"
+      loop: [0, 1]
+    - name: Mirror pool with lz4 and 1M records
+      ansible.builtin.shell: |
+        zpool list tank >/dev/null 2>&1 && exit 0
+        zpool create -o ashift=12 -O compression=lz4 -O recordsize=1M -O atime=off \
+          -m {{ zfs_mount }} tank mirror {{ lab_dir }}/zfs0.img {{ lab_dir }}/zfs1.img
+        echo created
+      register: zpool
+      changed_when: "'created' in zpool.stdout"
+  rescue:
+    - name: Say why ZFS was skipped
+      ansible.builtin.debug:
+        msg: "ZFS skipped: the module or package is not available on this kernel."

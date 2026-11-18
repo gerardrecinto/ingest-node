@@ -11,6 +11,17 @@
     mode: "0644"
   notify: reload exports
 
+- name: Short NFSv4 grace and lease time (lab only, a real server keeps the defaults)
+  ansible.builtin.copy:
+    dest: /etc/nfs.conf.d/lab.conf
+    content: |
+      [nfsd]
+      grace-time=10
+      lease-time=10
+    mode: "0644"
+  when: nfs_short_grace | bool
+  notify: restart nfs
+
 - name: Run the NFS server
   ansible.builtin.service:
     name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
@@ -19,10 +30,43 @@
 - name: Flush handlers before mounting
   ansible.builtin.meta: flush_handlers
 
-- name: Mount over NFSv4.2, TCP, 1 MiB transfers, 4 connections
-  ansible.posix.mount:
+- name: Wait until the export is visible
+  ansible.builtin.command: exportfs -v
+  register: exports
+  until: tier_mount in exports.stdout
+  retries: 10
+  delay: 2
+  changed_when: false
+
+- name: Mount point
+  ansible.builtin.file:
     path: "{{ nfs_mount }}"
-    src: "127.0.0.1:{{ tier_mount }}"
-    fstype: nfs4
-    opts: vers=4.2,proto=tcp,hard,rsize=1048576,wsize=1048576,nconnect=4
-    state: mounted
+    state: directory
+    mode: "0755"
+
+- name: Is it mounted already
+  ansible.builtin.command: findmnt -n {{ nfs_mount }}
+  register: mounted
+  failed_when: false
+  changed_when: false
+
+- name: Mount over NFSv4.2, TCP, 1 MiB transfers, 4 connections, bounded to two minutes
+  when: mounted.rc != 0
+  block:
+    - name: mount
+      ansible.builtin.command: >
+        timeout 120 mount -t nfs4 -o vers=4.2,proto=tcp,hard,rsize=1048576,wsize=1048576,nconnect=4
+        127.0.0.1:{{ tier_mount }} {{ nfs_mount }}
+  rescue:
+    - name: What the server says
+      ansible.builtin.shell: |
+        exportfs -v; rpcinfo -p 2>&1 | head -20; journalctl -u nfs-server -n 40 --no-pager; dmesg | tail -20
+      register: diag
+      changed_when: false
+      failed_when: false
+    - name: Show it
+      ansible.builtin.debug:
+        var: diag.stdout_lines
+    - name: Stop here
+      ansible.builtin.fail:
+        msg: NFS mount did not complete, see the output above.

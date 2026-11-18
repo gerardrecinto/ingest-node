@@ -33,7 +33,8 @@ jobs:
       - name: Syntax check
         run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
       - name: Build the node
-        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml -e zfs_enabled=true | tee out-run1.txt
+        run: |
+          ansible-playbook -i ansible/inventory.ini ansible/site.yml -e zfs_enabled=true | tee out-run1.txt
           grep -E "ok=.*failed=0 " out-run1.txt
       - name: Second run must change nothing
         run: |

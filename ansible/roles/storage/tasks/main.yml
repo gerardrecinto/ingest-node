@@ -53,11 +53,11 @@
     vg: "{{ vg_name }}"
     pvs: "{{ md_dev.stdout }}"
 
-- name: Logical volume takes all space
+- name: Logical volume takes the whole group
   community.general.lvol:
     vg: "{{ vg_name }}"
     lv: data
-    size: 100%FREE
+    size: 100%VG
 
 - name: XFS filesystem
   community.general.filesystem:

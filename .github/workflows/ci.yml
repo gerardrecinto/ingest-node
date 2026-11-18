@@ -41,8 +41,9 @@ jobs:
           ansible-playbook -i ansible/inventory.ini ansible/site.yml -e zfs_enabled=true | tee out-run2.txt
           grep -E "ok=.*changed=0 " out-run2.txt
       - name: Layout
+        if: always()
         run: |
-          cat /proc/mdstat; sudo lvs; findmnt /srv/ingest/nvme /mnt/ingest-nfs
+          cat /proc/mdstat; sudo pvs; sudo lvs; findmnt /srv/ingest/nvme /mnt/ingest-nfs
           sudo zpool status 2>&1 | head -5 || true
       - name: Validate the node
         run: sudo bin/node-validate --mount /srv/ingest/nvme:xfs --nfs-mount /mnt/ingest-nfs | tee validate-ok.txt
@@ -72,6 +73,15 @@ jobs:
           if sudo bin/node-validate --mount /srv/ingest/nvme:xfs | tee validate-degraded.txt; then
             echo "degraded array passed validation"; exit 1; fi
           grep "FAIL  md-raid" validate-degraded.txt
+      - name: Same failure through edgeprobe, from the live host
+        run: |
+          git clone --depth 1 https://github.com/gerardrecinto/edgeprobe /tmp/edgeprobe
+          /tmp/edgeprobe/scripts/collect_storage.sh /tmp/snap
+          cd /tmp/edgeprobe
+          set +e
+          PYTHONPATH=src python -m edgeprobe analyze /tmp/snap | tee "$GITHUB_WORKSPACE/out/edgeprobe-degraded.txt"
+          code=${PIPESTATUS[0]}
+          [ "$code" = 2 ] && grep -q "Software RAID array is degraded" "$GITHUB_WORKSPACE/out/edgeprobe-degraded.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

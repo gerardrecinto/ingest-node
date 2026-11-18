@@ -44,7 +44,7 @@ jobs:
       - name: Layout
         if: always()
         run: |
-          cat /proc/mdstat; sudo pvs; sudo lvs; findmnt /srv/ingest/nvme /mnt/ingest-nfs
+          cat /proc/mdstat; sudo pvs; sudo lvs; findmnt /srv/ingest/nvme || true; findmnt /mnt/ingest-nfs || true; grep -E ' nfs' /proc/mounts || true
           sudo zpool status 2>&1 | head -5 || true
       - name: Validate the node
         run: sudo bin/node-validate --mount /srv/ingest/nvme:xfs --nfs-mount /mnt/ingest-nfs | tee validate-ok.txt

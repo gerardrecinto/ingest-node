@@ -4,6 +4,11 @@
   ansible.builtin.package:
     name: [slurm-wlm, munge]
     state: present
+  async: 300
+  poll: 5
+  register: pkg_result
+  until: pkg_result is succeeded
+  retries: 2
 
 - name: Spool and log directories
   ansible.builtin.file:

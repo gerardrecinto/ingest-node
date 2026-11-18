@@ -2,6 +2,11 @@
   ansible.builtin.package:
     name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-utils' }}"
     state: present
+  async: 300
+  poll: 5
+  register: pkg_result
+  until: pkg_result is succeeded
+  retries: 2
 
 - name: Export the tier to localhost
   ansible.builtin.lineinfile:

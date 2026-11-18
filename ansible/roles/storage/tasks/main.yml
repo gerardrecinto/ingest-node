@@ -4,6 +4,11 @@
   ansible.builtin.package:
     name: [mdadm, lvm2, xfsprogs]
     state: present
+  async: 300
+  poll: 5
+  register: pkg_result
+  until: pkg_result is succeeded
+  retries: 2
 
 - name: Backing file directory
   ansible.builtin.file:
@@ -82,6 +87,11 @@
       ansible.builtin.package:
         name: "{{ 'zfsutils-linux' if ansible_os_family == 'Debian' else 'zfs' }}"
         state: present
+      async: 300
+      poll: 5
+      register: pkg_result
+      until: pkg_result is succeeded
+      retries: 2
     - name: Two more backing files
       ansible.builtin.command: truncate -s {{ loop_size }} {{ lab_dir }}/zfs{{ item }}.img
       args:

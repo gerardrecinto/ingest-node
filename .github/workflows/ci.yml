@@ -31,12 +31,13 @@ jobs:
       - run: pip install ansible-core
       - run: ansible-galaxy collection install -r ansible/requirements.yml
       - name: Syntax check
-        run: ansible-playbook ansible/site.yml --syntax-check
+        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
       - name: Build the node
-        run: ansible-playbook ansible/site.yml -e zfs_enabled=true | tee out-run1.txt
+        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml -e zfs_enabled=true | tee out-run1.txt
+          grep -E "ok=.*failed=0 " out-run1.txt
       - name: Second run must change nothing
         run: |
-          ansible-playbook ansible/site.yml -e zfs_enabled=true | tee out-run2.txt
+          ansible-playbook -i ansible/inventory.ini ansible/site.yml -e zfs_enabled=true | tee out-run2.txt
           grep -E "ok=.*changed=0 " out-run2.txt
       - name: Layout
         run: |
@@ -55,6 +56,12 @@ jobs:
         run: |
           if sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab bench /srv/ingest/nvme --baseline out/tier-base.json --rate-iops 50 --out out/tier-capped.json; then
             echo "capped run passed the gate"; exit 1; fi
+      - name: Run the benchmark as a Slurm job
+        run: |
+          id=$(sudo env "PATH=$PATH" sbatch --parsable --wait slurm/bench.sbatch /srv/ingest/nvme)
+          sudo scontrol show job "$id" | tee out/slurm-job.txt
+          grep "JobState=COMPLETED" out/slurm-job.txt
+          cat /tmp/ingest-bench-$id.out
       - name: Push-only firewall in namespaces
         run: sudo env "PATH=$PATH" PYTHONPATH=src python -m ingestlab fw --json out/firewall.json
       - name: Fail one RAID member, validation must catch it

@@ -6,3 +6,4 @@
     - { role: storage, tags: [storage] }
     - { role: nfs, tags: [nfs] }
     - { role: firewall, tags: [firewall] }
+    - { role: slurm, tags: [slurm], when: ansible_os_family == 'Debian' }

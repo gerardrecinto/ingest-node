@@ -1,0 +1,14 @@
+ClusterName=ingestlab
+SlurmctldHost={{ ansible_hostname }}
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core
+SlurmUser=slurm
+StateSaveLocation=/var/spool/slurmctld
+SlurmdSpoolDir=/var/spool/slurmd
+SlurmctldLogFile=/var/log/slurm/slurmctld.log
+SlurmdLogFile=/var/log/slurm/slurmd.log
+SlurmdParameters=config_overrides
+NodeName={{ ansible_hostname }} CPUs={{ ansible_processor_nproc }} State=UNKNOWN
+PartitionName=ingest Nodes={{ ansible_hostname }} Default=YES MaxTime=INFINITE State=UP

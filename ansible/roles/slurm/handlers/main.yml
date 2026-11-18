@@ -1,0 +1,5 @@
+- name: restart slurm
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: restarted
+  loop: [slurmctld, slurmd]

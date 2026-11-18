@@ -128,7 +128,8 @@ def run():
     setup()
     procs = listeners()
     try:
-        before = {"ot_to_ingest_8080": probe("ot", IP["ingest"], 8080), "ingest_to_ot_22": probe("ingest", IP["ot_ingest"], 22)}
+        before = {"ot_to_ingest_8080": probe("ot", IP["ingest"], 8080),
+                  "ingest_to_ot_22": probe("ingest", IP["ot_ingest"], 22)}
         ns("ot", "nft", "-f", RULES)
         t0 = time.time()
         with ThreadPoolExecutor(len(CASES)) as pool:

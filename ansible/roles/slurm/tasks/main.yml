@@ -1,0 +1,44 @@
+# One node that is both controller and compute, enough to schedule the benchmark.
+# Debian family only; a RHEL-family node needs the OpenHPC or EPEL packages.
+- name: Slurm and munge
+  ansible.builtin.package:
+    name: [slurm-wlm, munge]
+    state: present
+
+- name: Spool and log directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+  loop: [/var/spool/slurmctld, /var/spool/slurmd, /var/log/slurm]
+
+- name: slurm.conf
+  ansible.builtin.template:
+    src: slurm.conf.j2
+    dest: /etc/slurm/slurm.conf
+    mode: "0644"
+  notify: restart slurm
+
+- name: cgroup.conf
+  ansible.builtin.template:
+    src: cgroup.conf.j2
+    dest: /etc/slurm/cgroup.conf
+    mode: "0644"
+  notify: restart slurm
+
+- name: Start services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [munge, slurmctld, slurmd]
+
+- name: Wait for the node to be usable
+  ansible.builtin.command: sinfo -h -o %T
+  register: state
+  until: "'idle' in state.stdout or 'mix' in state.stdout or 'alloc' in state.stdout"
+  retries: 20
+  delay: 3
+  changed_when: false

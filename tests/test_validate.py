@@ -1,8 +1,6 @@
 import os
 import subprocess
 
-import pytest
-
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 SCRIPT = os.path.join(ROOT, "bin", "node-validate")
 PROFILE = os.path.join(ROOT, "ansible", "roles", "tuning", "files", "90-ingest.conf")

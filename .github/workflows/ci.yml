@@ -66,7 +66,7 @@ jobs:
           set +e
           out=$(sudo env "PATH=$PATH" sbatch --parsable --wait slurm/bench.sbatch /srv/ingest/nvme 2>&1); rc=$?
           echo "sbatch rc=$rc: $out"
-          if [ $rc -ne 0 ]; then sudo tail -30 /var/log/slurm/slurmctld.log /var/log/slurm/slurmd.log; exit 1; fi
+          if [ $rc -ne 0 ]; then cat /tmp/ingest-bench-*.out 2>/dev/null; sudo tail -n 30 /var/log/slurm/slurmd.log; exit 1; fi
           id=${out%%;*}
           sudo scontrol show job "$id" | tee out/slurm-job.txt
           grep "JobState=COMPLETED" out/slurm-job.txt

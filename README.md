@@ -81,14 +81,6 @@ All design-only; nothing here ran in production.
 | Silent drop | Reject | Slower debugging | The segment is internal |
 | p99 in the gate | Averages | Needs more samples | Throughput-only batch work |
 
-## Not covered
-
-- Hardware. Loop files on a shared runner are not NVMe drives, and the throughput numbers describe that runner. No 100GbE, RoCE, BeeGFS, NVMe-oF, racking or cabling.
-- NFS is mounted over localhost, so it proves options and plumbing, not network behaviour.
-- The firewall is proven with namespaces, not a switch, VLAN or hardware firewall. The ruleset is never applied to the CI host.
-- Slurm is one node with no accounting. No PBS Pro.
-- Kernel parameters are starting values, not measured on 100GbE.
-- Rocky Linux 9 is RHEL-compatible, not licensed RHEL.
-- The fio limits in CI are wide because a shared runner is noisy.
+Throughput numbers come from loop files on a shared CI runner.
 
 MIT license.
